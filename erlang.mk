@@ -5699,8 +5699,8 @@ try
 		})
 	end || F <- [$(shell echo $(addprefix $(comma)\",$(addsuffix \",$1)) | sed 's/^.//')]],
 	halt(0)
-catch C:E ->
-	io:format("Exception ~p:~p~nStacktrace: ~p~n", [C, E, erlang:get_stacktrace()]),
+catch C:E:S ->
+	io:format("Exception ~p:~p~nStacktrace: ~p~n", [C, E, S]),
 	halt(1)
 end.
 endef
@@ -7026,8 +7026,8 @@ define proper_check.erl
 	end of
 		true -> halt(0);
 		_ -> halt(1)
-	catch error:undef ->
-		io:format("Undefined property or module?~n~p~n", [erlang:get_stacktrace()]),
+	catch error:undef:S ->
+		io:format("Undefined property or module?~n~p~n", [S]),
 		halt(0)
 	end.
 endef
@@ -7368,8 +7368,8 @@ define triq_check.erl
 	end of
 		true -> halt(0);
 		_ -> halt(1)
-	catch error:undef ->
-		io:format("Undefined property or module?~n~p~n", [erlang:get_stacktrace()]),
+	catch error:undef:S ->
+		io:format("Undefined property or module?~n~p~n", [S]),
 		halt(0)
 	end.
 endef
