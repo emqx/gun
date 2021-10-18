@@ -739,7 +739,8 @@ retry_loop(State=#state{parent=Parent, opts=Opts}, Retries) ->
 				{retry_loop, State, Retries})
 	end.
 
-before_loop(State=#state{opts=Opts, protocol=Protocol}) ->
+before_loop(State=#state{socket = Socket, transport = Transport,
+						 opts=Opts, protocol=Protocol}) ->
 	%% @todo Might not be worth checking every time?
 	ProtoOptsKey = case Protocol of
 		gun_http -> http_opts;
@@ -751,13 +752,13 @@ before_loop(State=#state{opts=Opts, protocol=Protocol}) ->
 		infinity -> undefined;
 		_ -> erlang:send_after(Keepalive, self(), keepalive)
 	end,
+	Transport:setopts(Socket, [{active, 10000}]),
 	loop(State#state{keepalive_ref=KeepaliveRef}).
 
 loop(State=#state{parent=Parent, owner=Owner, owner_ref=OwnerRef,
 		origin_host=Host, origin_port=Port, opts=Opts, socket=Socket,
 		transport=Transport, protocol=Protocol, protocol_state=ProtoState}) ->
 	{OK, Closed, Error} = Transport:messages(),
-	Transport:setopts(Socket, [{active, once}]),
 	receive
 		{OK, Socket, Data} ->
 			case Protocol:handle(Data, ProtoState) of
@@ -779,6 +780,9 @@ loop(State=#state{parent=Parent, owner=Owner, owner_ref=OwnerRef,
 		{Closed, _PreviousSocket} ->
 			loop(State);
 		{Error, _PreviousSocket, _} ->
+			loop(State);
+		{tcp_passive, Socket} ->
+			Transport:setopts(Socket, [{active, 10000}]),
 			loop(State);
 		keepalive ->
 			ProtoState2 = Protocol:keepalive(ProtoState),
