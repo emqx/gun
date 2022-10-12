@@ -752,7 +752,7 @@ before_loop(State=#state{socket = Socket, transport = Transport,
 		infinity -> undefined;
 		_ -> erlang:send_after(Keepalive, self(), keepalive)
 	end,
-	Transport:setopts(Socket, [{active, 10000}]),
+	Transport:setopts(Socket, [{active, 1000}]),
 	loop(State#state{keepalive_ref=KeepaliveRef}).
 
 loop(State=#state{parent=Parent, owner=Owner, owner_ref=OwnerRef,
@@ -781,8 +781,8 @@ loop(State=#state{parent=Parent, owner=Owner, owner_ref=OwnerRef,
 			loop(State);
 		{Error, _PreviousSocket, _} ->
 			loop(State);
-		{tcp_passive, Socket} ->
-			Transport:setopts(Socket, [{active, 10000}]),
+		{Passive, Socket} when Passive =:= tcp_passive orelse Passive =:= ssl_passive ->
+			Transport:setopts(Socket, [{active, 1000}]),
 			loop(State);
 		keepalive ->
 			ProtoState2 = Protocol:keepalive(ProtoState),
