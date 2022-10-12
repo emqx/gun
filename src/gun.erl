@@ -85,6 +85,10 @@
 -export([system_continue/3]).
 -export([system_terminate/4]).
 -export([system_code_change/4]).
+-export([loop/1]).
+-export([ws_loop/1]).
+-export([retry_loop/2]).
+-export([before_loop/1]).
 
 -type headers() :: [{binary(), iodata()}].
 
@@ -707,7 +711,7 @@ up(State=#state{owner=Owner, opts=Opts, transport=Transport}, Socket, Protocol, 
 	ProtoOpts = maps:get(ProtoOptsKey, Opts, #{}),
 	ProtoState = Protocol:init(Owner, Socket, Transport, ProtoOpts),
 	Owner ! {gun_up, self(), Protocol:name()},
-	before_loop(State#state{socket=Socket, protocol=Protocol, protocol_state=ProtoState}).
+	?MODULE:before_loop(State#state{socket=Socket, protocol=Protocol, protocol_state=ProtoState}).
 
 down(State=#state{owner=Owner, opts=Opts, protocol=Protocol, protocol_state=ProtoState}, Reason) ->
 	{KilledStreams, UnprocessedStreams} = Protocol:down(ProtoState),
@@ -725,9 +729,9 @@ retry(State=#state{keepalive_ref=KeepaliveRef}, Retries) when is_reference(Keepa
 	after 0 ->
 		ok
 	end,
-	retry_loop(State#state{keepalive_ref=undefined}, Retries - 1);
+	?MODULE:retry_loop(State#state{keepalive_ref=undefined}, Retries - 1);
 retry(State, Retries) ->
-	retry_loop(State, Retries - 1).
+	?MODULE:retry_loop(State, Retries - 1).
 
 retry_loop(State=#state{parent=Parent, opts=Opts}, Retries) ->
 	_ = erlang:send_after(maps:get(retry_timeout, Opts, 5000), self(), retry),
@@ -753,7 +757,7 @@ before_loop(State=#state{socket = Socket, transport = Transport,
 		_ -> erlang:send_after(Keepalive, self(), keepalive)
 	end,
 	Transport:setopts(Socket, [{active, 1000}]),
-	loop(State#state{keepalive_ref=KeepaliveRef}).
+	?MODULE:loop(State#state{keepalive_ref=KeepaliveRef}).
 
 loop(State=#state{parent=Parent, owner=Owner, owner_ref=OwnerRef,
 		origin_host=Host, origin_port=Port, opts=Opts, socket=Socket,
@@ -776,31 +780,31 @@ loop(State=#state{parent=Parent, owner=Owner, owner_ref=OwnerRef,
 			Transport:close(Socket),
 			down(State, {error, Reason});
 		{OK, _PreviousSocket, _Data} ->
-			loop(State);
+			?MODULE:loop(State);
 		{Closed, _PreviousSocket} ->
-			loop(State);
+			?MODULE:loop(State);
 		{Error, _PreviousSocket, _} ->
-			loop(State);
+			?MODULE:loop(State);
 		{Passive, Socket} when Passive =:= tcp_passive orelse Passive =:= ssl_passive ->
 			Transport:setopts(Socket, [{active, 1000}]),
-			loop(State);
+			?MODULE:loop(State);
 		keepalive ->
 			ProtoState2 = Protocol:keepalive(ProtoState),
-			before_loop(State#state{protocol_state=ProtoState2});
+			?MODULE:before_loop(State#state{protocol_state=ProtoState2});
 		{request, ReplyTo, StreamRef, Method, Path, Headers, <<>>} ->
 			ProtoState2 = Protocol:request(ProtoState,
 				StreamRef, ReplyTo, Method, Host, Port, Path, Headers),
-			loop(State#state{protocol_state=ProtoState2});
+			?MODULE:loop(State#state{protocol_state=ProtoState2});
 		{request, ReplyTo, StreamRef, Method, Path, Headers, Body} ->
 			ProtoState2 = Protocol:request(ProtoState,
 				StreamRef, ReplyTo, Method, Host, Port, Path, Headers, Body),
-			loop(State#state{protocol_state=ProtoState2});
+			?MODULE:loop(State#state{protocol_state=ProtoState2});
 		%% @todo Do we want to reject ReplyTo if it's not the process
 		%% who initiated the connection? For both data and cancel.
 		{data, ReplyTo, StreamRef, IsFin, Data} ->
 			ProtoState2 = Protocol:data(ProtoState,
 				StreamRef, ReplyTo, IsFin, Data),
-			loop(State#state{protocol_state=ProtoState2});
+			?MODULE:loop(State#state{protocol_state=ProtoState2});
 		{connect, ReplyTo, StreamRef, Destination0, Headers} ->
 			%% The protocol option has been deprecated in favor of the protocols option.
 			%% Nobody probably ended up using it, but let's not break the interface.
@@ -821,19 +825,19 @@ loop(State=#state{parent=Parent, owner=Owner, owner_ref=OwnerRef,
 					Destination1
 			end,
 			ProtoState2 = Protocol:connect(ProtoState, StreamRef, ReplyTo, Destination, Headers),
-			loop(State#state{protocol_state=ProtoState2});
+			?MODULE:loop(State#state{protocol_state=ProtoState2});
 		{cancel, ReplyTo, StreamRef} ->
 			ProtoState2 = Protocol:cancel(ProtoState, StreamRef, ReplyTo),
-			loop(State#state{protocol_state=ProtoState2});
+			?MODULE:loop(State#state{protocol_state=ProtoState2});
 		%% @todo Maybe make an interface in the protocol module instead of checking on protocol name.
 		%% An interface would also make sure that HTTP/1.0 can't upgrade.
 		{ws_upgrade, Owner, StreamRef, Path, Headers} when Protocol =:= gun_http ->
 			WsOpts = maps:get(ws_opts, Opts, #{}),
 			ProtoState2 = Protocol:ws_upgrade(ProtoState, StreamRef, Host, Port, Path, Headers, WsOpts),
-			loop(State#state{protocol_state=ProtoState2});
+			?MODULE:loop(State#state{protocol_state=ProtoState2});
 		{ws_upgrade, Owner, StreamRef, Path, Headers, WsOpts} when Protocol =:= gun_http ->
 			ProtoState2 = Protocol:ws_upgrade(ProtoState, StreamRef, Host, Port, Path, Headers, WsOpts),
-			loop(State#state{protocol_state=ProtoState2});
+			?MODULE:loop(State#state{protocol_state=ProtoState2});
 			%% @todo can fail if http/1.0
 		{shutdown, Owner} ->
 			%% @todo Protocol:shutdown?
@@ -848,29 +852,29 @@ loop(State=#state{parent=Parent, owner=Owner, owner_ref=OwnerRef,
 		{ws_upgrade, _, StreamRef, _, _} ->
 			Owner ! {gun_error, self(), StreamRef, {badstate,
 				"Websocket is only supported over HTTP/1.1."}},
-			loop(State);
+			?MODULE:loop(State);
 		{ws_upgrade, _, StreamRef, _, _, _} ->
 			Owner ! {gun_error, self(), StreamRef, {badstate,
 				"Websocket is only supported over HTTP/1.1."}},
-			loop(State);
+			?MODULE:loop(State);
 		{ws_send, _, _} ->
 			Owner ! {gun_error, self(), {badstate,
 				"Connection needs to be upgraded to Websocket "
 				"before the gun:ws_send/1 function can be used."}},
-			loop(State);
+			?MODULE:loop(State);
 		%% @todo The ReplyTo patch disabled the notowner behavior.
 		%% We need to add an option to enforce this behavior if needed.
 		Any when is_tuple(Any), is_pid(element(2, Any)) ->
 			element(2, Any) ! {gun_error, self(), {notowner,
 				"Operations are restricted to the owner of the connection."}},
-			loop(State);
+			?MODULE:loop(State);
 		Any ->
 			error_logger:error_msg("Unexpected message: ~w~n", [Any]),
-			loop(State)
+			?MODULE:loop(State)
 	end.
 
 commands([], State) ->
-	loop(State);
+	?MODULE:loop(State);
 commands([close|_], State=#state{socket=Socket, transport=Transport}) ->
 	Transport:close(Socket),
 	down(State, normal);
@@ -901,7 +905,7 @@ commands([{switch_transport, Transport, Socket}|Tail], State) ->
 	commands(Tail, State#state{socket=Socket, transport=Transport});
 %% @todo The two loops should be reunified and this clause generalized.
 commands([{switch_protocol, Protocol=gun_ws, ProtoState}], State) ->
-	ws_loop(State#state{protocol=Protocol, protocol_state=ProtoState});
+	?MODULE:ws_loop(State#state{protocol=Protocol, protocol_state=ProtoState});
 %% @todo And this state should probably not be ignored.
 commands([{switch_protocol, Protocol, _ProtoState0}|Tail],
 		State=#state{owner=Owner, opts=Opts, socket=Socket, transport=Transport}) ->
@@ -920,7 +924,7 @@ ws_loop(State=#state{parent=Parent, owner=Owner, owner_ref=OwnerRef, socket=Sock
 					Transport:close(Socket),
 					down(State, normal);
 				ProtoState2 ->
-					ws_loop(State#state{protocol_state=ProtoState2})
+					?MODULE:ws_loop(State#state{protocol_state=ProtoState2})
 			end;
 		{Closed, Socket} ->
 			Transport:close(Socket),
@@ -930,7 +934,7 @@ ws_loop(State=#state{parent=Parent, owner=Owner, owner_ref=OwnerRef, socket=Sock
 			down(State, {error, Reason});
 		%% Ignore any previous HTTP keep-alive.
 		keepalive ->
-			ws_loop(State);
+			?MODULE:ws_loop(State);
 %		{ws_send, Owner, Frames} when is_list(Frames) ->
 %			todo; %% @todo
 		{ws_send, Owner, Frame} ->
@@ -939,7 +943,7 @@ ws_loop(State=#state{parent=Parent, owner=Owner, owner_ref=OwnerRef, socket=Sock
 					Transport:close(Socket),
 					down(State, normal);
 				ProtoState2 ->
-					ws_loop(State#state{protocol_state=ProtoState2})
+					?MODULE:ws_loop(State#state{protocol_state=ProtoState2})
 			end;
 		{shutdown, Owner} ->
 			%% @todo Protocol:shutdown? %% @todo close frame
@@ -954,7 +958,7 @@ ws_loop(State=#state{parent=Parent, owner=Owner, owner_ref=OwnerRef, socket=Sock
 		Any when is_tuple(Any), is_pid(element(2, Any)) ->
 			element(2, Any) ! {gun_error, self(), {notowner,
 				"Operations are restricted to the owner of the connection."}},
-			ws_loop(State);
+			?MODULE:ws_loop(State);
 		Any ->
 			error_logger:error_msg("Unexpected message: ~w~n", [Any])
 	end.
@@ -966,11 +970,11 @@ owner_gone(Shutdown = {shutdown, _}) -> exit(Shutdown);
 owner_gone(Reason) -> error({owner_gone, Reason}).
 
 system_continue(_, _, {retry_loop, State, Retry}) ->
-	retry_loop(State, Retry);
+	?MODULE:retry_loop(State, Retry);
 system_continue(_, _, {loop, State}) ->
-	loop(State);
+	?MODULE:loop(State);
 system_continue(_, _, {ws_loop, State}) ->
-	ws_loop(State).
+	?MODULE:ws_loop(State).
 
 -spec system_terminate(any(), _, _, _) -> no_return().
 system_terminate(Reason, _, _, _) ->
