@@ -76,7 +76,7 @@
 	%% frame is sent followed by CONTINUATION frames: no other frame can be
 	%% sent in between.
 	parse_state = undefined :: preface | normal
-		| {continuation, cowboy_stream:streamid(), cowboy_stream:fin(), binary()},
+		| {continuation, cow_http2:streamid(), cow_http2:fin(), binary()},
 
 	%% HPACK decoding and encoding state.
 	decode_state = cow_hpack:init() :: cow_hpack:state(),

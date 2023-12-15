@@ -106,7 +106,7 @@
 	retry_timeout   => pos_integer(),
 	trace           => boolean(),
 	transport       => tcp | tls | ssl,
-	transport_opts  => [gen_tcp:connect_option()] | [ssl:connect_option()],
+	transport_opts  => [gen_tcp:connect_option()] | [ssl:tls_client_option()],
 	ws_opts         => ws_opts()
 }.
 -export_type([opts/0]).
@@ -120,7 +120,7 @@
 	protocol => http | http2, %% @todo Remove in Gun 2.0.
 	protocols => [http | http2],
 	transport => tcp | tls,
-	tls_opts => [ssl:connect_option()],
+	tls_opts => [ssl:tls_client_option()],
 	tls_handshake_timeout => timeout()
 }.
 -export_type([connect_destination/0]).
@@ -269,6 +269,7 @@ check_options([{ws_opts, ProtoOpts}|Opts]) when is_map(ProtoOpts) ->
 check_options([Opt|_]) ->
 	{error, {options, Opt}}.
 
+-dialyzer({nowarn_function, consider_tracing/2}).
 consider_tracing(ServerPid, #{trace := true}) ->
 	dbg:start(),
 	dbg:tracer(),
