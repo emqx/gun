@@ -11,3 +11,5 @@ ebin/*.app
 ebin/*.appup
 logs
 test/*.beam
+_build
+rebar.lock

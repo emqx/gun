@@ -21,6 +21,7 @@
 -export([info/1]).
 -export([close/1]).
 -export([shutdown/1]).
+-export([start_link/3]).
 
 %% Requests.
 -export([delete/2]).
@@ -180,6 +181,19 @@
 }).
 
 %% Connection.
+
+start_link(Host, Port, Opts0) ->
+	%% We accept both ssl and tls but only use tls in the code.
+	Opts = case Opts0 of
+		#{transport := ssl} -> Opts0#{transport => tls};
+		_ -> Opts0
+	end,
+	case check_options(maps:to_list(Opts)) of
+		ok ->
+			start_link(self(), Host, Port, Opts);
+		CheckError ->
+			CheckError
+	end.
 
 -spec open(inet:hostname() | inet:ip_address(), inet:port_number())
 	-> {ok, pid()} | {error, any()}.
